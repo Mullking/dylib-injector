@@ -1,5 +1,4 @@
 name: Inject Dylib into IPA
-
 on:
   workflow_dispatch:
     inputs:
@@ -9,6 +8,9 @@ on:
       dylib_url:
         description: 'URL to the .dylib file'
         required: true
+      dylib_url_2:
+        description: 'Optional: URL to a second .dylib file'
+        required: false
 
 jobs:
   inject:
@@ -33,23 +35,34 @@ jobs:
           curl -L "${{ github.event.inputs.ipa_url }}" -o original.ipa
           curl -L "${{ github.event.inputs.dylib_url }}" -o tweak.dylib
 
+          # Download optional second dylib if provided
+          if [ -n "${{ github.event.inputs.dylib_url_2 }}" ]; then
+            curl -L "${{ github.event.inputs.dylib_url_2 }}" -o tweak2.dylib
+          fi
+
       - name: Inject Dylib
         run: |
           # Define absolute paths
           IPA_PATH="$(pwd)/original.ipa"
           TWEAK_PATH="$(pwd)/tweak.dylib"
+          TWEAK2_PATH="$(pwd)/tweak2.dylib"
+
           # Azule requires -o to be a directory, not a filename
           OUT_DIR="$(pwd)/output"
-          
           mkdir -p "$OUT_DIR"
-          
+
+          # Build Azule args (add second -f only if tweak2 exists)
+          AZULE_ARGS=( -i "$IPA_PATH" -f "$TWEAK_PATH" -o "$OUT_DIR" )
+
+          if [ -f "$TWEAK2_PATH" ]; then
+            AZULE_ARGS+=( -f "$TWEAK2_PATH" )
+          fi
+
           # Run Azule
-          ~/Azule/azule -i "$IPA_PATH" -f "$TWEAK_PATH" -o "$OUT_DIR"
+          ~/Azule/azule "${AZULE_ARGS[@]}"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: modified-ipa
-          # Azule names the file automatically (e.g., original_patched.ipa)
-          # We upload everything inside the output folder
           path: output/*.ipa
